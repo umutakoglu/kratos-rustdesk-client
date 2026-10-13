@@ -1,4 +1,5 @@
 name: Build Kratos support packages
+run-name: Kratos unsigned test packages
 
 on:
   workflow_dispatch:
