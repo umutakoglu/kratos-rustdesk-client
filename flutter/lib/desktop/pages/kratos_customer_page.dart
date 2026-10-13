@@ -295,7 +295,7 @@ class KratosCustomerPage extends StatelessWidget {
 
   Widget _buildSupportCard(BuildContext context, ServerModel model) {
     final formattedId = formatID(model.serverId.text);
-    final password = model.serverPasswd.text.isNotEmpty ? model.serverPasswd.text : model.password.text;
+    final password = model.serverPasswd.text;
 
     return Container(
       decoration: BoxDecoration(
@@ -505,7 +505,7 @@ class KratosCustomerPage extends StatelessWidget {
                 onPressed: () => _launchUrl('https://kratosbilgisayar.com'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF334155),
-                  side: const BorderSide(color: const Color(0xFFCBD5E1)),
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
