@@ -24,6 +24,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:window_size/window_size.dart' as window_size;
 import '../widgets/button.dart';
+import 'package:flutter_hbb/desktop/pages/kratos_customer_page.dart';
+import 'package:flutter_hbb/desktop/pages/kratos_technician_page.dart';
 
 class DesktopHomePage extends StatefulWidget {
   const DesktopHomePage({Key? key}) : super(key: key);
@@ -59,15 +61,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   Widget build(BuildContext context) {
     super.build(context);
     final isIncomingOnly = bind.isIncomingOnly();
-    return _buildBlock(
-        child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        buildLeftPane(context),
-        if (!isIncomingOnly) const VerticalDivider(width: 1),
-        if (!isIncomingOnly) Expanded(child: buildRightPane(context)),
-      ],
-    ));
+
+    if (isIncomingOnly) {
+      return _buildBlock(child: const KratosCustomerPage());
+    }
+
+    return _buildBlock(child: const KratosTechnicianPage());
   }
 
   Widget _buildBlock({required Widget child}) {
