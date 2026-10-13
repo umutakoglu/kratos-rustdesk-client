@@ -1,0 +1,243 @@
+name: Build Kratos support packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.24.5"
+  RUST_VERSION: "1.75"
+  MAC_RUST_VERSION: "1.81"
+  LLVM_VERSION: "15.0.6"
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+
+jobs:
+  generate-bridge:
+    uses: ./.github/workflows/bridge.yml
+
+  windows:
+    name: Windows x64 - ${{ matrix.edition }}
+    needs: generate-bridge
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - edition: customer
+            artifact: Kratos-Musteri-Destek-Windows-x64
+            product: Kratos Destek
+          - edition: technician
+            artifact: Kratos-Teknisyen-Windows-x64
+            product: Kratos Teknisyen
+    env:
+      KRATOS_EDITION: ${{ matrix.edition }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5a # v4
+        with:
+          submodules: recursive
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0 # v2.0.9
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225 # v2.12.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Install custom Flutter engine
+        shell: pwsh
+        run: |
+          flutter precache --windows
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+          Move-Item -Force windows-x64-release/* C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/
+
+      - name: Patch Flutter
+        shell: bash
+        run: |
+          cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff "$(dirname "$(dirname "$(which flutter)")")"
+          cd "$(dirname "$(dirname "$(which flutter)")")"
+          git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
+
+      - name: Generate Kratos application icons
+        working-directory: flutter
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: kratos-windows-${{ matrix.edition }}
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        shell: bash
+        env:
+          VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
+        run: $VCPKG_ROOT/vcpkg install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"
+
+      - name: Set Windows product metadata
+        shell: pwsh
+        run: |
+          $path = 'flutter/windows/runner/Runner.rc'
+          $content = Get-Content $path -Raw
+          $content = $content.Replace('Purslane Tech Pte. Ltd.', 'Kratos Bilgisayar')
+          $content = $content.Replace('RustDesk Remote Desktop', '${{ matrix.product }}')
+          $content = $content.Replace('VALUE "ProductName", "RustDesk"', 'VALUE "ProductName", "${{ matrix.product }}"')
+          Set-Content -Path $path -Value $content -Encoding utf8
+
+      - name: Build portable application
+        shell: pwsh
+        run: |
+          python .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram
+          Move-Item ./flutter/build/windows/x64/runner/Release ./rustdesk
+
+      - name: Create self-contained executable
+        shell: bash
+        run: |
+          sed -i '/dpiAware/d' res/manifest.xml
+          pushd libs/portable
+          pip3 install -r requirements.txt
+          python3 generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
+          popd
+          mkdir -p package
+          mv target/release/rustdesk-portable-packer.exe "package/${{ matrix.artifact }}.exe"
+          sha256sum "package/${{ matrix.artifact }}.exe" > "package/${{ matrix.artifact }}.exe.sha256"
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: package/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS technician - ${{ matrix.arch }}
+    needs: generate-bridge
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            arch: Intel
+            vcpkg-triplet: x64-osx
+            extra_build_args: ""
+          - target: aarch64-apple-darwin
+            os: macos-14
+            arch: Apple-Silicon
+            vcpkg-triplet: arm64-osx
+            extra_build_args: --screencapturekit
+    env:
+      KRATOS_EDITION: technician
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5a # v4
+        with:
+          submodules: recursive
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Install build tools
+        run: |
+          brew install llvm create-dmg pkg-config
+          curl -L -o nasm.zip https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/macosx/nasm-2.16.03-macosx.zip
+          unzip nasm.zip
+          sudo cp nasm-2.16.03/nasm /usr/local/bin/nasm
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Patch Flutter
+        shell: bash
+        run: |
+          cd "$(dirname "$(dirname "$(which flutter)")")"
+          git apply "${{ github.workspace }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+          cd "$(dirname "$(which flutter)")"
+          sed -i -e 's/_setFramesEnabledState(false);/\/\/_setFramesEnabledState(false);/g' ../packages/flutter/lib/src/scheduler/binding.dart
+
+      - name: Generate Kratos application icons
+        working-directory: flutter
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.MAC_RUST_VERSION }}
+          targets: ${{ matrix.target }}
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: kratos-macos-${{ matrix.arch }}
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        run: $VCPKG_ROOT/vcpkg install --x-install-root="$VCPKG_ROOT/installed"
+
+      - name: Configure Apple Silicon deployment target
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: |
+          sed -i -e 's/MACOSX_DEPLOYMENT_TARGET\=[0-9]*.[0-9]*/MACOSX_DEPLOYMENT_TARGET=12.3/' build.py
+          sed -i -e "s/platform :osx, '.*'/platform :osx, '12.3'/" flutter/macos/Podfile
+          sed -i -e 's/osx_minimum_system_version = "[0-9]*.[0-9]*"/osx_minimum_system_version = "12.3"/' Cargo.toml
+          sed -i -e 's/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET = 12.3;/' flutter/macos/Runner.xcodeproj/project.pbxproj
+
+      - name: Build technician application
+        run: ./build.py --flutter --hwcodec --unix-file-copy-paste ${{ matrix.extra_build_args }}
+
+      - name: Create unsigned DMG
+        shell: bash
+        run: |
+          mv flutter/build/macos/Build/Products/Release/RustDesk.app "flutter/build/macos/Build/Products/Release/Kratos Teknisyen.app"
+          create-dmg --icon "Kratos Teknisyen.app" 200 190 --hide-extension "Kratos Teknisyen.app" --window-size 800 400 --app-drop-link 600 185 "Kratos-Teknisyen-macOS-${{ matrix.arch }}.dmg" "flutter/build/macos/Build/Products/Release/Kratos Teknisyen.app"
+          shasum -a 256 "Kratos-Teknisyen-macOS-${{ matrix.arch }}.dmg" > "Kratos-Teknisyen-macOS-${{ matrix.arch }}.dmg.sha256"
+
+      - name: Upload macOS package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Kratos-Teknisyen-macOS-${{ matrix.arch }}
+          path: |
+            Kratos-Teknisyen-macOS-${{ matrix.arch }}.dmg
+            Kratos-Teknisyen-macOS-${{ matrix.arch }}.dmg.sha256
+          if-no-files-found: error

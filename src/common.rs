@@ -2455,6 +2455,7 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
 }
 
 pub fn load_custom_client() {
+    load_kratos_build_config();
     #[cfg(debug_assertions)]
     if let Ok(data) = std::fs::read_to_string("./custom.txt") {
         read_custom_client(data.trim());
@@ -2473,6 +2474,60 @@ pub fn load_custom_client() {
             return;
         };
         read_custom_client(&data.trim());
+    }
+}
+
+fn load_kratos_build_config() {
+    let edition = option_env!("KRATOS_EDITION").unwrap_or_default();
+    let (app_name, connection_type) = match edition {
+        "customer" => ("Kratos Destek", "incoming"),
+        "technician" => ("Kratos Teknisyen", "outgoing"),
+        _ => return,
+    };
+
+    *config::APP_NAME.write().unwrap() = app_name.to_owned();
+    config::HARD_SETTINGS
+        .write()
+        .unwrap()
+        .insert("conn-type".to_owned(), connection_type.to_owned());
+    config::DEFAULT_LOCAL_SETTINGS
+        .write()
+        .unwrap()
+        .insert(keys::OPTION_LANGUAGE.to_owned(), "tr".to_owned());
+
+    let mut builtin = config::BUILTIN_SETTINGS.write().unwrap();
+    builtin.insert(keys::OPTION_HIDE_POWERED_BY_ME.to_owned(), "Y".to_owned());
+    builtin.insert(keys::OPTION_HIDE_HELP_CARDS.to_owned(), "Y".to_owned());
+    drop(builtin);
+
+    if edition == "customer" {
+        let mut hard = config::HARD_SETTINGS.write().unwrap();
+        hard.insert("disable-settings".to_owned(), "Y".to_owned());
+        hard.insert("disable-ab".to_owned(), "Y".to_owned());
+        hard.insert("disable-account".to_owned(), "Y".to_owned());
+        hard.insert("disable-installation".to_owned(), "Y".to_owned());
+        drop(hard);
+
+        let mut settings = config::OVERWRITE_SETTINGS.write().unwrap();
+        for key in [
+            keys::OPTION_ENABLE_KEYBOARD,
+            keys::OPTION_ENABLE_CLIPBOARD,
+            keys::OPTION_ENABLE_FILE_TRANSFER,
+            keys::OPTION_ENABLE_FILE_COPY_PASTE,
+            keys::OPTION_ENABLE_AUDIO,
+        ] {
+            settings.insert(key.to_owned(), "Y".to_owned());
+        }
+        settings.insert(keys::OPTION_ACCESS_MODE.to_owned(), "full".to_owned());
+        settings.insert(keys::OPTION_APPROVE_MODE.to_owned(), "password".to_owned());
+        settings.insert(
+            keys::OPTION_VERIFICATION_METHOD.to_owned(),
+            "use-temporary-password".to_owned(),
+        );
+        settings.insert(
+            keys::OPTION_TEMPORARY_PASSWORD_LENGTH.to_owned(),
+            "8".to_owned(),
+        );
     }
 }
 

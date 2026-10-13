@@ -75,6 +75,23 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         block: _block, mask: true, use: canBeBlocked, child: child);
   }
 
+  Widget buildKratosSupportButton(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(20, 14, 11, 4),
+      child: ElevatedButton.icon(
+        onPressed: () => launchUrl(
+          Uri.parse(
+            'https://wa.me/902327001938?text=Merhaba%2C%20uzaktan%20destek%20almak%20istiyorum.',
+          ),
+          mode: LaunchMode.externalApplication,
+        ),
+        icon: const Icon(Icons.chat_bubble_outline, size: 17),
+        label: const Text('Destek ekibine ulaş'),
+      ),
+    );
+  }
+
   Widget buildLeftPane(BuildContext context) {
     final isIncomingOnly = bind.isIncomingOnly();
     final isOutgoingOnly = bind.isOutgoingOnly();
@@ -92,6 +109,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       buildTip(context),
       if (!isOutgoingOnly) buildIDBoard(context),
       if (!isOutgoingOnly) buildPasswordBoard(context),
+      if (isIncomingOnly) buildKratosSupportButton(context),
       FutureBuilder<Widget>(
         future: Future.value(
             Obx(() => buildHelpCards(stateGlobal.updateUrl.value))),
