@@ -211,10 +211,10 @@ jobs:
         uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
-          doNotCache: false
+          doNotCache: true
 
       - name: Install vcpkg dependencies
-        run: $VCPKG_ROOT/vcpkg install --x-install-root="$VCPKG_ROOT/installed"
+        run: $VCPKG_ROOT/vcpkg install --triplet ${{ matrix.vcpkg-triplet }} --x-install-root="$VCPKG_ROOT/installed"
 
       - name: Configure Apple Silicon deployment target
         if: matrix.target == 'aarch64-apple-darwin'
