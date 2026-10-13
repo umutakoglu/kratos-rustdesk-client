@@ -231,6 +231,7 @@ jobs:
         shell: bash
         run: |
           mv flutter/build/macos/Build/Products/Release/RustDesk.app "flutter/build/macos/Build/Products/Release/Kratos Teknisyen.app"
+          codesign --force --deep --sign - "flutter/build/macos/Build/Products/Release/Kratos Teknisyen.app"
           create-dmg --icon "Kratos Teknisyen.app" 200 190 --hide-extension "Kratos Teknisyen.app" --window-size 800 400 --app-drop-link 600 185 "Kratos-Teknisyen-macOS-${{ matrix.arch }}.dmg" "flutter/build/macos/Build/Products/Release/Kratos Teknisyen.app"
           shasum -a 256 "Kratos-Teknisyen-macOS-${{ matrix.arch }}.dmg" > "Kratos-Teknisyen-macOS-${{ matrix.arch }}.dmg.sha256"
 
